@@ -1,0 +1,6 @@
+[server]
+# allow comfortably large variant uploads (MB)
+maxUploadSize = 50
+
+[theme]
+base = "light"

@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+.DS_Store
+
+# runtime logs
+logs/
+
+# AlphaFold cache — keep only the bundled ATP2B2 example model, ignore the rest
+afdb_cache/*
+!afdb_cache/AF-Q01814-model.pdb.gz
+!afdb_cache/AF-Q01814-pae.json
