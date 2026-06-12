@@ -44,23 +44,6 @@ Files:
 - `fisher_scan.py` — the self-contained Fisher 3D neighborhood test
 - `examples/` — bundled ATP2B2 (Q01814) case/control lists for the demo button
 
-## Deploy to Streamlit Community Cloud
-
-1. Put this `3dnt_webtool/` folder in a GitHub repo (it can be the repo root, or
-   a subfolder).
-2. Go to https://share.streamlit.io, sign in with GitHub, and click **New app**.
-3. Select the repo/branch and set **Main file path** to `app.py` (include the
-   subfolder if it isn't the repo root, e.g. `3dnt_webtool/app.py`).
-4. Deploy. Streamlit installs `requirements.txt` and gives you a
-   `https://<name>.streamlit.app` URL.
-5. To keep it private: in the app's **Settings → Sharing**, set viewers to
-   specific emails (e.g. Hilary's) instead of public.
-
-Notes:
-- Outbound network to UniProt and the AlphaFold DB is allowed on Streamlit
-  Cloud, so structure fetching works out of the box.
-- `afdb_cache/` is ephemeral on the cloud; the bundled ATP2B2 model is committed
-  so the example button is instant, and other proteins are fetched on demand.
 
 ## Notes / limitations
 
