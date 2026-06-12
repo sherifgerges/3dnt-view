@@ -20,7 +20,7 @@ st.set_page_config(page_title="3DNT", layout="wide")
 # base font size for the whole app (rem-based text scales from the root)
 st.markdown(
     "<style>"
-    "html { font-size: 150% !important; }"
+    "html { font-size: 118% !important; }"
     # slightly larger labels for the gene box and the two file uploaders
     ".stTextInput label p, .stFileUploader label p { font-size: 1.25rem !important; }"
     # slightly larger sidebar parameter labels (radius / PAE / pLDDT)
