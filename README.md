@@ -54,7 +54,20 @@ Files:
 - The center residue is excluded from its own neighborhood, matching the
   reference PyMOL pipeline.
 
-## Citation
+## Citations
 
-See the **Citations** page in the app (bioRxiv 2025.08.25.672202 and
-medRxiv 2026.05.29.26354366).
+If you use this tool, please cite:
+
+**Genetic and structural evidence links Ca²⁺ dysregulation and ATP2B2 to neuropsychiatric illness.**
+Sherif Gerges, Nikolaj Catois Straarup, Mohamed A. El-Brolosy, F. Kyle Satterstrom,
+Nolan Kamitaki, Jiayi Yuan, Emi Ling, Carmen Gelze, Raozhou Lin, Melissa Goldman,
+Curtis Mello, Tarjinder Singh, The Autism Sequencing Consortium, Jonathan S. Weissman,
+Sabina Berretta, Jen Q. Pan, Hilary Finucane, Charlott Stock, Poul Nissen,
+Steven A. McCarroll, Mark Daly. *bioRxiv* 2025.08.25.672202.
+https://www.biorxiv.org/content/10.1101/2025.08.25.672202v5
+
+**Systematic identification of disease-associated 3D neighborhoods in protein structures.**
+Emily Nason, Sherif Gerges, F. Kyle Satterstrom, Bram L. Gorissen, Ruqi Liao,
+Georgia Panagiotaropoulou, Jeremy Guez, The Autism Sequencing Consortium,
+Konrad J. Karczewski, Mark Daly, Hilary Finucane. *medRxiv* 2026.05.29.26354366.
+https://www.medrxiv.org/content/10.64898/2026.05.29.26354366v1
