@@ -92,12 +92,26 @@ with st.sidebar:
         "target='_blank' style='font-size:0.95rem'>What is pLDDT?</a>",
         unsafe_allow_html=True,
     )
+    n_sims = st.select_slider(
+        "Null simulations (multiple-testing correction)",
+        options=[0, 100, 500, 1000, 5000, 10000], value=1000)
     st.markdown("---")
-    st.caption("Per-neighborhood **one-sided Fisher's exact test** (case "
-               "enrichment). Residues are colored by −log10 of the smallest "
-               "p-value among neighborhoods containing them. Bonferroni cutoff "
-               "(0.05 / #tested) is shown; interpret as **within-protein** "
-               "significance, not genome-wide.")
+    if n_sims > 0:
+        st.caption("Per-neighborhood **one-sided Fisher's exact test** (case "
+                   "enrichment). Significance uses a **permutation FWER** "
+                   "(Westfall–Young min-P over the correlated neighborhoods): "
+                   "case/control labels are shuffled across alleles, and a "
+                   "center is called significant when its p beats the null of "
+                   "the best center in ≥95% of simulations. Residues are colored "
+                   "by −log10 of the smallest p among neighborhoods containing "
+                   "them. Within-protein, not genome-wide.")
+    else:
+        st.caption("Per-neighborhood **one-sided Fisher's exact test** (case "
+                   "enrichment). With simulations off, only the **Bonferroni** "
+                   "cutoff (0.05 / #tested) is shown — conservative here because "
+                   "the neighborhoods are correlated. Residues are colored by "
+                   "−log10 of the smallest p among neighborhoods containing them. "
+                   "Within-protein, not genome-wide.")
 
 query = st.text_input("Gene symbol or UniProt accession", placeholder="e.g. CDK13 or Q14004")
 c1, c2 = st.columns(2)
@@ -186,35 +200,50 @@ if run:
         st.error(f"AlphaFold fetch failed: {e}"); st.stop()
 
     # 4f. run the Fisher neighborhood test ---------------------------------
-    with st.spinner("Running Fisher 3D neighborhood test "
-                    "(all-atom distances + per-center Fisher)…"):
+    _spin = ("Running Fisher 3D neighborhood test + "
+             f"{n_sims:,} permutations…") if n_sims > 0 else \
+            "Running Fisher 3D neighborhood test…"
+    with st.spinner(_spin):
         try:
             scores, meta = FS.run_fisher_3dnt(
                 df_counts, pdb_gz, pae, radius=radius,
-                pae_cutoff=pae_cutoff, plddt_cutoff=plddt_cutoff)
+                pae_cutoff=pae_cutoff, plddt_cutoff=plddt_cutoff,
+                n_sims=int(n_sims))
         except Exception as e:
             st.error(f"Fisher scan failed: {e}"); st.stop()
 
     # 5f. results ----------------------------------------------------------
     bonf = meta["bonferroni_p"]
     tested = scores[scores["center_p"].notna()].copy()
-    n_sig = meta["n_sig_bonferroni"]
-    st.subheader(f"Results — {n_sig} significant neighborhood"
-                 f"{'' if n_sig == 1 else 's'} at Bonferroni "
-                 f"(p < {bonf:.2e}; {radius:g} Å radius)")
+    use_fwer = meta["n_sims"] > 0 and meta["n_sig_fwer"] is not None
+    if use_fwer:
+        n_sig = meta["n_sig_fwer"]
+        st.subheader(f"Results — {n_sig} significant neighborhood"
+                     f"{'' if n_sig == 1 else 's'} at FWER < 0.05 "
+                     f"(permutation, {meta['n_sims']:,} sims; {radius:g} Å radius)")
+    else:
+        n_sig = meta["n_sig_bonferroni"]
+        st.subheader(f"Results — {n_sig} significant neighborhood"
+                     f"{'' if n_sig == 1 else 's'} at Bonferroni "
+                     f"(p < {bonf:.2e}; {radius:g} Å radius)")
 
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Pass Bonferroni", n_sig)
-    m2.metric("Pass p < 0.01", meta["n_sig_p01"])
+    if use_fwer:
+        m1.metric("Pass FWER < 0.05", n_sig)
+        m2.metric("Pass Bonferroni", meta["n_sig_bonferroni"])
+    else:
+        m1.metric("Pass Bonferroni", n_sig)
+        m2.metric("Pass p < 0.01", meta["n_sig_p01"])
     m3.metric("Variants tested", meta["n_tested"])
     m4.metric("Residues analyzed", f"{meta['n_residues_kept']} / {meta['n_residues_total']}")
     m5.metric("Mean pLDDT", f"{meta['mean_plddt']:.1f}")
 
     # results table -------------------------------------------------------
-    show = (tested.sort_values("center_p")[
-                ["aa_pos", "center_p", "nbhd_case", "nbhd_control",
-                 "neglog10_min_p", "n_containing"]]
-            .reset_index(drop=True))
+    cols = ["aa_pos", "center_p"]
+    if use_fwer:
+        cols.append("fwer_p")
+    cols += ["nbhd_case", "nbhd_control", "neglog10_min_p", "n_containing"]
+    show = tested.sort_values("center_p")[cols].reset_index(drop=True)
     st.dataframe(show, use_container_width=True, height=380)
     st.download_button("Download per-residue scores TSV",
                        scores.to_csv(sep="\t", index=False),
@@ -227,8 +256,24 @@ if run:
         + (f" · PAE cutoff {pae_cutoff:g}" if pae_cutoff > 0 else " · PAE off"),
         f"Smallest neighborhood p-value: <b>{meta['min_p']:.2e}</b> "
         f"(−log10 = {neglog_min:.2f})",
-        f"Neighborhoods passing Bonferroni (p &lt; {bonf:.2e}): <b>{n_sig}</b>",
-        f"Neighborhoods passing p &lt; 0.01: <b>{meta['n_sig_p01']}</b>",
+    ]
+    if use_fwer:
+        stat_lines += [
+            f"Neighborhoods passing <b>FWER &lt; 0.05</b> "
+            f"(permutation, {meta['n_sims']:,} sims): <b>{n_sig}</b>",
+            f"Permutation FWER 0.05 threshold: −log10 p = "
+            f"<b>{meta['neglog10_fwer_thresh']:.2f}</b> "
+            f"(vs Bonferroni {meta['neglog10_bonferroni']:.2f} — "
+            f"Bonferroni is conservative given correlated neighborhoods)",
+            f"Neighborhoods passing Bonferroni (p &lt; {bonf:.2e}): "
+            f"{meta['n_sig_bonferroni']}",
+        ]
+    else:
+        stat_lines += [
+            f"Neighborhoods passing Bonferroni (p &lt; {bonf:.2e}): <b>{n_sig}</b>",
+            f"Neighborhoods passing p &lt; 0.01: <b>{meta['n_sig_p01']}</b>",
+        ]
+    stat_lines += [
         f"Variants tested: <b>{meta['n_tested']}</b>",
         f"Residues analyzed: <b>{meta['n_residues_kept']}</b> of "
         f"{meta['n_residues_total']} "
@@ -239,7 +284,6 @@ if run:
         f"{meta['n_case_total']} case / {meta['n_ctrl_total']} control alleles "
         f"on kept residues",
         f"Max −log10 p: {meta['vmax']:.2f}",
-        f"Bonferroni −log10 cutoff: {meta['neglog10_bonferroni']:.2f}",
     ]
     st.markdown(
         "<div style='font-size:1.05rem; line-height:1.7; color:#444'>"
@@ -293,8 +337,13 @@ if run:
             unsafe_allow_html=True,
         )
 
-        # structure on the left, compact vertical legend on its right
-        nb = meta["neglog10_bonferroni"]
+        # structure on the left, compact vertical legend on its right.
+        # significance tick = permutation FWER 0.05 threshold when sims ran,
+        # else Bonferroni.
+        if use_fwer and np.isfinite(meta["neglog10_fwer_thresh"]):
+            nb, tick_label = meta["neglog10_fwer_thresh"], "— FWER 0.05"
+        else:
+            nb, tick_label = meta["neglog10_bonferroni"], "— Bonferroni"
         bonf_pct = (max(0.0, min(1.0, nb / vmax)) * 100
                     if (np.isfinite(nb) and vmax > 0) else None)
         v_tick = ((f"<div style='position:absolute;bottom:{bonf_pct:.1f}%;left:-3px;"
@@ -302,7 +351,7 @@ if run:
                   if bonf_pct is not None else "")
         v_tick_lbl = ((f"<div style='position:absolute;bottom:{bonf_pct:.1f}%;"
                        f"transform:translateY(50%);font-size:0.8rem;color:#333'>"
-                       f"— Bonferroni</div>") if bonf_pct is not None else "")
+                       f"{tick_label}</div>") if bonf_pct is not None else "")
 
         col_struct, col_leg = st.columns([4, 1])
         with col_struct:

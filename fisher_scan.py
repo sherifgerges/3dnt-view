@@ -21,7 +21,7 @@ import json
 import numpy as np
 import pandas as pd
 from scipy.spatial.distance import cdist
-from scipy.stats import fisher_exact
+from scipy.stats import hypergeom
 from Bio.PDB import PDBParser
 
 PLDDT_CUTOFF_DEFAULT = 50.0
@@ -112,16 +112,21 @@ def _residue_distance_matrix(atom_coords, atom_res, n):
 # ---------------------------------------------------------------------------
 def run_fisher_3dnt(df_counts, pdb_gz_path, pae_path,
                     radius=15.0, pae_cutoff=15.0,
-                    plddt_cutoff=PLDDT_CUTOFF_DEFAULT):
+                    plddt_cutoff=PLDDT_CUTOFF_DEFAULT,
+                    n_sims=1000, seed=0):
     """Run the Fisher 3D neighborhood test for one protein.
 
     df_counts : columns aa_pos, ac_case, ac_control (one row per variant residue).
+    n_sims    : permutation replicates for the Westfall-Young min-P FWER
+                correction (0 = skip, fall back to Bonferroni only).
+
     Returns (scores_df, meta).
-      scores_df columns: aa_pos, center_p, min_p_containing, n_containing,
+      scores_df columns: aa_pos, center_p, fwer_p, min_p_containing, n_containing,
                          nbhd_case, nbhd_control, neglog10_min_p
                          (one row per pLDDT-valid residue).
-      meta: n_tested, bonferroni_p, neglog10_bonferroni, n_case_total,
-            n_ctrl_total, vmax.
+      meta: n_tested, min_p, n_sig_bonferroni, n_sig_p01, bonferroni_p,
+            neglog10_bonferroni, n_sims, n_sig_fwer, neglog10_fwer_thresh,
+            n_case_total, n_ctrl_total, vmax, and residue/pLDDT summaries.
     """
     resnums, plddt, atom_coords, atom_res = _parse_structure(pdb_gz_path)
     n = len(resnums)
@@ -158,35 +163,69 @@ def run_fisher_3dnt(df_counts, pdb_gz_path, pae_path,
     if n_case_total == 0 or n_ctrl_total == 0:
         raise ValueError("Need at least one case and one control allele after filtering.")
 
-    var_idx = np.array([resnum_to_idx[p] for p in counts], dtype=int)
-    var_case = np.array([counts[p][0] for p in counts], dtype=float)
-    var_ctrl = np.array([counts[p][1] for p in counts], dtype=float)
+    # canonical order: tested centers == variant-carrying positions
+    positions = sorted(counts.keys())
+    K = len(positions)
+    idx = np.array([resnum_to_idx[p] for p in positions], dtype=int)
+    var_case = np.array([counts[p][0] for p in positions], dtype=float)
+    var_ctrl = np.array([counts[p][1] for p in positions], dtype=float)
+    tot_pos = var_case + var_ctrl
 
-    tested_centers = sorted(counts.keys())          # resnums carrying a variant
-    center_p, center_ab = {}, {}
-    for r in tested_centers:
-        ci = resnum_to_idx[r]
-        within = d[ci, var_idx] <= radius
-        a = int(var_case[within].sum())
-        b = int(var_ctrl[within].sum())
-        c = n_case_total - a
-        dd = n_ctrl_total - b
-        _, p = fisher_exact([[a, b], [c, dd]], alternative="greater")
-        center_p[r] = float(p)
-        center_ab[r] = (a, b)
+    # center x variant-position neighborhood membership (self excluded: d diag = inf)
+    D = d[np.ix_(idx, idx)]
+    M = D <= radius
+    nbhd_total = M @ tot_pos
+    a_obs = M @ var_case
+    b_obs = nbhd_total - a_obs
+    N = int(n_case_total + n_ctrl_total)
+    # one-sided Fisher's exact (case enrichment) == hypergeometric upper tail;
+    # verified identical to scipy.stats.fisher_exact(..., alternative="greater")
+    p_obs = np.where(nbhd_total > 0,
+                     hypergeom.sf(a_obs - 1, N, int(n_case_total), nbhd_total),
+                     1.0).astype(float)
+    center_p = {positions[i]: float(p_obs[i]) for i in range(K)}
+    center_ab = {positions[i]: (int(a_obs[i]), int(b_obs[i])) for i in range(K)}
 
-    tested_idx = np.array([resnum_to_idx[r] for r in tested_centers], dtype=int)
-    tested_p = np.array([center_p[r] for r in tested_centers], dtype=float)
+    # ---- permutation FWER (Westfall-Young min-P) -------------------------------
+    # Neighborhoods overlap heavily, so the per-center tests are strongly
+    # correlated and Bonferroni/BH (which assume independence) are miscalibrated.
+    # We permute the case/control labels across alleles while conditioning on the
+    # variant positions, recompute every center each replicate, and take the
+    # minimum p across centers as the null max-statistic. The family-wise adjusted
+    # p for a center is the fraction of replicates whose best center beats it.
+    fwer_p = {}
+    n_sig_fwer = None
+    neglog10_fwer_thresh = np.nan
+    if n_sims and n_sims > 0 and K > 0:
+        rng = np.random.default_rng(seed)
+        Ncase = int(n_case_total)
+        pos_of_allele = np.repeat(np.arange(K), tot_pos.astype(int))   # length N
+        minp_null = np.empty(int(n_sims), dtype=float)
+        for s in range(int(n_sims)):
+            case_alleles = rng.choice(N, size=Ncase, replace=False)
+            cpp = np.bincount(pos_of_allele[case_alleles], minlength=K).astype(float)
+            a_p = M @ cpp
+            p_p = np.where(nbhd_total > 0,
+                           hypergeom.sf(a_p - 1, N, Ncase, nbhd_total), 1.0)
+            minp_null[s] = p_p.min()
+        minp_null.sort()
+        ranks = np.searchsorted(minp_null, p_obs, side="right")
+        p_adj = (1.0 + ranks) / (int(n_sims) + 1.0)
+        fwer_p = {positions[i]: float(p_adj[i]) for i in range(K)}
+        n_sig_fwer = int((p_adj < 0.05).sum())
+        thresh_p = float(np.quantile(minp_null, 0.05))    # p giving FWER 0.05
+        neglog10_fwer_thresh = float(-np.log10(max(thresh_p, 1e-300)))
 
+    # ---- per-residue rows over pLDDT-valid residues ---------------------------
     rows = []
     for i in range(n):
         if not valid_mask[i]:
             continue
         rn = int(resnums[i])
-        dists = d[i, tested_idx]
+        dists = d[i, idx]
         m = dists <= radius
         if m.any():
-            min_p = float(tested_p[m].min())
+            min_p = float(p_obs[m].min())
             n_cont = int(m.sum())
         else:
             min_p, n_cont = np.nan, 0
@@ -194,6 +233,7 @@ def run_fisher_3dnt(df_counts, pdb_gz_path, pae_path,
         rows.append({
             "aa_pos": rn,
             "center_p": center_p.get(rn, np.nan),
+            "fwer_p": fwer_p.get(rn, np.nan),
             "min_p_containing": min_p,
             "n_containing": n_cont,
             "nbhd_case": a,
@@ -204,14 +244,13 @@ def run_fisher_3dnt(df_counts, pdb_gz_path, pae_path,
     floor = 1e-300
     scores["neglog10_min_p"] = -np.log10(scores["min_p_containing"].clip(lower=floor))
 
-    n_tested = len(tested_centers)
+    n_tested = K
     bonf = 0.05 / n_tested if n_tested else np.nan
     vmax = float(np.nanmax(scores["neglog10_min_p"].values)) if len(scores) else 0.0
     n_kept = int(valid_mask.sum())
-    _cp = np.array([center_p[r] for r in tested_centers]) if n_tested else np.array([])
-    n_sig_bonf = int((_cp < bonf).sum()) if n_tested else 0
-    n_sig_p01 = int((_cp < 0.01).sum()) if n_tested else 0
-    min_p = float(_cp.min()) if n_tested else float("nan")
+    n_sig_bonf = int((p_obs < bonf).sum()) if n_tested else 0
+    n_sig_p01 = int((p_obs < 0.01).sum()) if n_tested else 0
+    min_p = float(p_obs.min()) if n_tested else float("nan")
     meta = {
         "n_tested": n_tested,                       # variant residues tested (centers)
         "min_p": min_p,                             # smallest neighborhood p-value
@@ -219,6 +258,9 @@ def run_fisher_3dnt(df_counts, pdb_gz_path, pae_path,
         "n_sig_p01": n_sig_p01,                     # centers below p < 0.01
         "bonferroni_p": bonf,
         "neglog10_bonferroni": (-np.log10(bonf) if n_tested else np.nan),
+        "n_sims": int(n_sims) if n_sims else 0,
+        "n_sig_fwer": n_sig_fwer,                   # centers at FWER < 0.05 (None if no sims)
+        "neglog10_fwer_thresh": neglog10_fwer_thresh,
         "n_case_total": n_case_total,
         "n_ctrl_total": n_ctrl_total,
         "vmax": vmax,
