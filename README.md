@@ -21,21 +21,24 @@ Then open the URL Streamlit prints (usually http://localhost:8501).
 
 ## How it works
 
-```
-gene/UniProt ─► UniProt REST ─► accession + sequence
-                     └─► AlphaFold DB ─► structure (.pdb.gz) + PAE (cached in afdb_cache/)
-case.txt / control.txt ─► parse variants ─► per-residue ac_case / ac_control
-              │
-              ▼
-   fisher_scan.run_fisher_3dnt
-     • all-atom min residue–residue distances, inflated to 1000 Å when both
-       directions of the PAE exceed the cutoff
-     • residues with mean pLDDT ≤ cutoff dropped
-     • one-sided Fisher's exact test per neighborhood center (case enrichment)
-     • per-residue score = −log10(min p over neighborhoods containing it)
-              ▼
-   results table + TSV  ·  structure colored white→red by enrichment
-```
+Enter a gene/UniProt ID and upload `case.txt` / `control.txt` (variant lists).
+The method is three steps:
+
+1. **Map case and control variants to the protein structure** (AlphaFold model,
+   fetched from the AlphaFold DB via UniProt).
+2. **For the neighborhood of radius R centered around each residue**, compare the
+   case:control ratio in the neighborhood to the case:control ratio in the rest
+   of the protein with a one-sided **Fisher's exact test**.
+3. **Score each residue** as −log10 of the smallest p-value across the
+   neighborhoods that contain it.
+
+Neighborhoods use all-atom residue–residue distances, with a pair pushed apart
+(distance inflated) when both directions of the AlphaFold **PAE** exceed the
+cutoff — i.e. their relative position is poorly predicted. Residues with mean
+pLDDT below the cutoff are dropped.
+
+Output: a results table + downloadable TSV, and the structure colored white→red
+by enrichment. Multiple-testing significance uses a permutation FWER (see the UI).
 
 Files:
 - `app.py` — Streamlit UI and orchestration
