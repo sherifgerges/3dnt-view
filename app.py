@@ -243,7 +243,18 @@ if run:
     if use_fwer:
         cols.append("fwer_p")
     cols += ["nbhd_case", "nbhd_control", "neglog10_min_p", "n_containing"]
-    show = tested.sort_values("center_p")[cols].reset_index(drop=True)
+    col_labels = {
+        "aa_pos": "Residue",
+        "center_p": "Neighborhood p-value",
+        "fwer_p": "FWER-adjusted p (permutation)",
+        "nbhd_case": "Case alleles in neighborhood",
+        "nbhd_control": "Control alleles in neighborhood",
+        "neglog10_min_p": "−log10(min p)",
+        "n_containing": "Neighborhoods containing residue",
+    }
+    show = (tested.sort_values("center_p")[cols]
+            .reset_index(drop=True)
+            .rename(columns=col_labels))
     st.dataframe(show, use_container_width=True, height=380)
     st.download_button("Download per-residue scores TSV",
                        scores.to_csv(sep="\t", index=False),
