@@ -387,8 +387,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 _MODES = {
+    "Upload my own variants and gene": "3DNT",
     "Reproduce data from the paper (Autism)": "ASD (genome-wide)",
-    "Upload my own variants for my own gene + phenotype": "3DNT",
     "Citations": "Citations",
 }
 _choice = st.radio("mode", list(_MODES), horizontal=True, label_visibility="collapsed")
@@ -429,6 +429,23 @@ if page == "Citations":
 
 if page == "3DNT":
     st.title("3D Neighborhood Test")
+    st.markdown(
+        "<div style='font-size:1.02rem; line-height:1.5; color:#444; max-width:900px; "
+        "margin-bottom:10px'>"
+        "The 3D neighborhood test maps <b>case</b> and <b>control</b> missense "
+        "variants onto a protein's AlphaFold structure and asks whether case "
+        "variants cluster together in 3D. For every residue it defines a spatial "
+        "<b>neighborhood</b> — all residues within a radius <i>R</i> (using all-atom "
+        "distances, down-weighting poorly-predicted pairs via AlphaFold PAE) — and "
+        "compares the case:control ratio inside that neighborhood to the rest of the "
+        "protein with a one-sided <b>Fisher's exact test</b>. Each residue is scored "
+        "by the strongest enrichment of any neighborhood containing it "
+        "(−log₁₀ of the smallest p), and significance is assessed by <b>permutation</b> "
+        "(shuffling case/control labels) to account for the many overlapping, "
+        "correlated neighborhoods. Enter a gene and upload case + control variant "
+        "lists below.</div>",
+        unsafe_allow_html=True,
+    )
 
 with st.sidebar:
     st.header("Parameters")
