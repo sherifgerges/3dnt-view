@@ -21,7 +21,7 @@ st.set_page_config(page_title="3DNT", layout="wide")
 # base font size for the whole app (rem-based text scales from the root)
 st.markdown(
     "<style>"
-    "html { font-size: 118% !important; }"
+    "html { font-size: 100% !important; }"
     # slightly larger labels for the gene box and the two file uploaders
     ".stTextInput label p, .stFileUploader label p { font-size: 1.25rem !important; }"
     # slightly larger sidebar parameter labels (radius / PAE / pLDDT)
@@ -387,7 +387,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 _MODES = {
-    "Explore a completed run (Autism)": "ASD (genome-wide)",
+    "Reproduce data from the paper (Autism)": "ASD (genome-wide)",
     "Upload my own variants for my own gene + phenotype": "3DNT",
     "Citations": "Citations",
 }
