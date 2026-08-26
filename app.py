@@ -9,6 +9,7 @@ Run:   SIR_REPO=/path/to/structure-informed-rvas  streamlit run app.py
 import os
 import gzip
 import numpy as np
+import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -38,180 +39,8 @@ if os.path.exists(_BROAD):
     _lc2.image(_BROAD, use_container_width=True)
 
 # left-sidebar navigation
-page = st.sidebar.radio("Page", ["3DNT", "Citations"], label_visibility="collapsed")
-
-if page == "Citations":
-    st.title("Citations")
-    st.markdown("If you use this tool in your work, please cite:")
-
-    st.markdown(
-        "**Genetic and structural evidence links Ca²⁺ dysregulation and ATP2B2 to "
-        "neuropsychiatric illness**  \n"
-        "Sherif Gerges, Nikolaj Catois Straarup, Mohamed A. El-Brolosy, F. Kyle "
-        "Satterstrom, Nolan Kamitaki, Jiayi Yuan, Emi Ling, Carmen Gelze, Raozhou "
-        "Lin, Melissa Goldman, Curtis Mello, Tarjinder Singh, The Autism Sequencing "
-        "Consortium, Jonathan S. Weissman, Sabina Berretta, Jen Q. Pan, Hilary "
-        "Finucane, Charlott Stock, Poul Nissen, Steven A. McCarroll, Mark Daly.  \n"
-        "*bioRxiv* 2025.08.25.672202; doi: "
-        "[https://doi.org/10.1101/2025.08.25.672202]"
-        "(https://doi.org/10.1101/2025.08.25.672202)"
-    )
-
-    st.markdown("---")
-
-    st.markdown(
-        "**Systematic identification of disease-associated 3D neighborhoods in "
-        "protein structures**  \n"
-        "Emily Nason, Sherif Gerges, F. Kyle Satterstrom, Bram L. Gorissen, Ruqi "
-        "Liao, Georgia Panagiotaropoulou, Jeremy Guez, The Autism Sequencing "
-        "Consortium, Konrad J. Karczewski, Mark Daly, Hilary Finucane.  \n"
-        "*medRxiv* 2026.05.29.26354366; doi: "
-        "[https://doi.org/10.64898/2026.05.29.26354366]"
-        "(https://doi.org/10.64898/2026.05.29.26354366)"
-    )
-    st.stop()
-
-st.title("3D Neighborhood Test")
-
-with st.sidebar:
-    st.header("Parameters")
-    radius = st.slider("Neighborhood radius (Å)", 6.0, 30.0, 15.0, 1.0)
-    pae_cutoff = st.number_input("PAE cutoff (0 = off)", 0.0, 35.0, 15.0, 1.0)
-    st.markdown(
-        "<a href='https://www.ebi.ac.uk/training/online/courses/alphafold/"
-        "inputs-and-outputs/evaluating-alphafolds-predicted-structures-using-"
-        "confidence-scores/pae-a-measure-of-global-confidence-in-alphafold-"
-        "predictions/' target='_blank' style='font-size:0.95rem'>What is PAE?</a>",
-        unsafe_allow_html=True,
-    )
-    plddt_cutoff = st.slider("pLDDT cutoff", 0.0, 90.0, 50.0, 5.0)
-    st.markdown(
-        "<a href='https://www.ebi.ac.uk/training/online/courses/alphafold/"
-        "inputs-and-outputs/evaluating-alphafolds-predicted-structures-using-"
-        "confidence-scores/plddt-understanding-local-confidence/' "
-        "target='_blank' style='font-size:0.95rem'>What is pLDDT?</a>",
-        unsafe_allow_html=True,
-    )
-    n_sims = st.select_slider(
-        "Null simulations (multiple-testing correction)",
-        options=[0, 100, 500, 1000, 5000, 10000], value=1000)
-    st.markdown("---")
-    if n_sims > 0:
-        st.caption("Per-neighborhood **one-sided Fisher's exact test** (case "
-                   "enrichment). Significance uses a **permutation FWER** "
-                   "(Westfall–Young min-P over the correlated neighborhoods): "
-                   "case/control labels are shuffled across alleles, and a "
-                   "center is called significant when its p beats the null of "
-                   "the best center in ≥95% of simulations. Residues are colored "
-                   "by −log10 of the smallest p among neighborhoods containing "
-                   "them. Within-protein, not genome-wide.")
-    else:
-        st.caption("Per-neighborhood **one-sided Fisher's exact test** (case "
-                   "enrichment). With simulations off, only the **Bonferroni** "
-                   "cutoff (0.05 / #tested) is shown — conservative here because "
-                   "the neighborhoods are correlated. Residues are colored by "
-                   "−log10 of the smallest p among neighborhoods containing them. "
-                   "Within-protein, not genome-wide.")
-
-query = st.text_input("Gene symbol or UniProt accession", placeholder="e.g. CDK13 or Q14004")
-c1, c2 = st.columns(2)
-case_file = c1.file_uploader("Case variants", type=["txt", "tsv", "csv"])
-ctrl_file = c2.file_uploader("Control variants", type=["txt", "tsv", "csv"])
-st.markdown(
-    "<div style='font-size:1.05rem; line-height:1.4; color:#555'>"
-    "<code>.txt</code>, <code>.tsv</code>, or <code>.csv</code>. One variant per line, "
-    "either notation (auto-detected): <code>A985V</code> or <code>p.Ala985Val</code>. "
-    "In a .tsv/.csv the variant can be in any column; an integer column is used as an "
-    "allele count (otherwise each line = one allele). Header rows are ignored.</div>",
-    unsafe_allow_html=True,
-)
-
-# --- bundled example dataset ------------------------------------------------
-EX_DIR = os.path.join(_HERE, "examples")
-EX_CASE = os.path.join(EX_DIR, "ATP2B2_cases.txt")
-EX_CTRL = os.path.join(EX_DIR, "ATP2B2_controls.txt")
-ex_available = os.path.exists(EX_CASE) and os.path.exists(EX_CTRL)
-
-ex_run = False
-if ex_available:
-    ex_run = st.button("Try ATP2B2 example",
-                       help="Load the bundled ATP2B2 (Q01814) case/control set and run")
-
-# resolve inputs: example data takes precedence when its button is clicked
-if ex_run:
-    query_val = "ATP2B2"
-    case_bytes = open(EX_CASE, "rb").read()
-    ctrl_bytes = open(EX_CTRL, "rb").read()
-else:
-    query_val = query
-    case_bytes = case_file.getvalue() if case_file else None
-    ctrl_bytes = ctrl_file.getvalue() if ctrl_file else None
-
-run_clicked = st.button("Run 3DNT", type="primary",
-                        disabled=not (query and case_file and ctrl_file))
-run = run_clicked or (ex_run and case_bytes is not None and ctrl_bytes is not None)
-
-if run:
-    # 1. resolve protein -------------------------------------------------------
-    try:
-        matches = F.resolve_uniprot(query_val)
-    except Exception as e:
-        st.error(f"UniProt lookup failed: {e}"); st.stop()
-    if not matches:
-        st.error("No human reviewed UniProt entry found for that query."); st.stop()
-    if len(matches) > 1:
-        label = st.selectbox("Multiple matches — pick one:",
-                             [f"{m['gene']} ({m['accession']}, {len(m['sequence'])} aa)" for m in matches])
-        chosen = matches[[f"{m['gene']} ({m['accession']}, {len(m['sequence'])} aa)" for m in matches].index(label)]
-    else:
-        chosen = matches[0]
-    acc, seq, gene = chosen["accession"], chosen["sequence"], chosen["gene"]
-    st.success(f"{gene}  ·  {acc}  ·  {len(seq)} aa")
-
-    # 2. parse variants --------------------------------------------------------
-    case_v, case_err, case_fmt = V.parse_variants(case_bytes.decode("utf-8", "ignore"))
-    ctrl_v, ctrl_err, ctrl_fmt = V.parse_variants(ctrl_bytes.decode("utf-8", "ignore"))
-
-    def fmt_msg(fmt):
-        if not fmt:
-            return "no variants"
-        return " + ".join(f"{n} {k}" for k, n in fmt.items())
-    st.info(f"Detected notation — cases: {fmt_msg(case_fmt)}; controls: {fmt_msg(ctrl_fmt)}. "
-            "Both `A985V` and `p.Ala985Val` are accepted.")
-
-    for name, err in (("case", case_err), ("control", ctrl_err)):
-        if err:
-            st.warning(f"{len(err)} unparseable {name} line(s) skipped, e.g. line {err[0][0]}: '{err[0][1]}'")
-    warns = V.validate_against_sequence(case_v, seq) + V.validate_against_sequence(ctrl_v, seq)
-    if warns:
-        with st.expander(f"⚠️ {len(warns)} ref-AA / position mismatches (click to review)"):
-            for w in warns[:200]:
-                st.text(w)
-    df_counts = V.build_counts(case_v, ctrl_v, acc)
-    n_case = sum(v.get("count", 1) for v in case_v)
-    n_ctrl = sum(v.get("count", 1) for v in ctrl_v)
-    st.write(f"{n_case} case alleles, {n_ctrl} control alleles "
-             f"across {len(df_counts)} residues.")
-
-    # 3. fetch structure -------------------------------------------------------
-    try:
-        pdb_gz, pae = F.fetch_alphafold(acc, seq_len=len(seq))
-    except Exception as e:
-        st.error(f"AlphaFold fetch failed: {e}"); st.stop()
-
-    # 4f. run the Fisher neighborhood test ---------------------------------
-    _spin = ("Running Fisher 3D neighborhood test + "
-             f"{n_sims:,} permutations…") if n_sims > 0 else \
-            "Running Fisher 3D neighborhood test…"
-    with st.spinner(_spin):
-        try:
-            scores, meta = FS.run_fisher_3dnt(
-                df_counts, pdb_gz, pae, radius=radius,
-                pae_cutoff=pae_cutoff, plddt_cutoff=plddt_cutoff,
-                n_sims=int(n_sims))
-        except Exception as e:
-            st.error(f"Fisher scan failed: {e}"); st.stop()
-
+def render_result(scores, meta, pdb_gz, case_v, ctrl_v, gene, acc, seq_len, radius, pae_cutoff):
+    """Render the per-protein 3DNT result (metrics, table, stats, structure)."""
     # 5f. results ----------------------------------------------------------
     bonf = meta["bonferroni_p"]
     tested = scores[scores["center_p"].notna()].copy()
@@ -344,7 +173,7 @@ if run:
         view.zoomTo()
         st.markdown(
             f"<div style='font-size:1.25rem; font-weight:600; margin-bottom:2px'>"
-            f"{gene} · UniProt {acc} · {len(seq)} aa</div>",
+            f"{gene} · UniProt {acc} · {seq_len} aa</div>",
             unsafe_allow_html=True,
         )
 
@@ -386,3 +215,287 @@ if run:
             )
     except Exception as e:
         st.info(f"(Structure view unavailable: {e})")
+
+
+
+def _asd_manhattan(res):
+    import altair as alt
+    d = res.copy()
+    d = d[d["min_p"].notna()].sort_values("gene_name").reset_index(drop=True)
+    if d.empty:
+        st.info("No proteins in the summary."); return
+    d["idx"] = range(1, len(d) + 1)
+    d["shade"] = (d["idx"] % 2).astype(str)
+    d["logp"] = d["neglog10_min_p"]
+    lines = []
+    if "fdr" in d and (d["fdr"] < 0.05).any():
+        lines.append(("FDR < 0.05", float(-np.log10(d.loc[d["fdr"] < 0.05, "min_p"].max())), [6, 4]))
+    if "fwer" in d and d["fwer"].notna().any() and (d["fwer"] < 0.05).any():
+        lines.append(("FWER < 0.05", float(-np.log10(d.loc[d["fwer"] < 0.05, "min_p"].max())), [2, 3]))
+    base = alt.Chart(d)
+    pts = base.mark_circle(size=55, opacity=0.85).encode(
+        x=alt.X("idx:Q", title="Protein (ordered by gene name)", axis=alt.Axis(labels=False, ticks=False)),
+        y=alt.Y("logp:Q", title="−log10(p)"),
+        color=alt.Color("shade:N", scale=alt.Scale(range=["#2c7fb8", "#7fcdbb"]), legend=None),
+        tooltip=["gene_name", "uniprot_id", "top_aa_pos",
+                 alt.Tooltip("min_p:Q", format=".2e"),
+                 alt.Tooltip("logp:Q", title="-log10 p", format=".2f"), "n_tested"])
+    layers = [pts]
+    for lab, y, dash in lines:
+        layers.append(alt.Chart(pd.DataFrame({"y": [y]})).mark_rule(strokeDash=dash, color="grey").encode(y="y:Q"))
+    sig = d[d["fwer"] < 0.05] if ("fwer" in d and d["fwer"].notna().any()) else d[d["fdr"] < 0.05]
+    if len(sig):
+        layers.append(alt.Chart(sig).mark_text(dy=-8, fontSize=10, color="black").encode(x="idx:Q", y="logp:Q", text="gene_name"))
+    st.altair_chart(alt.layer(*layers).properties(height=430), use_container_width=True)
+    if lines:
+        st.caption(" · ".join(f"{lab}: −log10 p = {y:.2f}" for lab, y, _ in lines) + f" · {len(sig)} gene(s) labeled")
+
+
+def render_asd_page(radius, pae_cutoff, plddt_cutoff, n_sims):
+    st.title("ASD — genome-wide 3D neighborhood test")
+    asd_dir = os.path.join(_HERE, "asd_data")
+    var_path = os.path.join(asd_dir, "ASD_variants.tsv")
+    # Manhattan uses the paper's published results (exact); fall back to a locally
+    # recomputed summary if the paper file isn't bundled.
+    paper_path = os.path.join(asd_dir, "asd_paper_manhattan.tsv")
+    res_path = paper_path if os.path.exists(paper_path) else os.path.join(asd_dir, "asd_web_results.tsv")
+    if not os.path.exists(var_path):
+        st.error("Bundled ASD variants not found (asd_data/ASD_variants.tsv)."); return
+    variants = pd.read_csv(var_path, sep="\t")
+    st.markdown(
+        "Manhattan = the **3DNT paper's published ASD results** (each point is a "
+        "protein's most significant neighborhood; dashed = FDR 0.05, dotted = "
+        "FWER 0.05). Hover for gene. Selecting a protein below **recomputes it live** "
+        "with this site's Fisher engine — top genes match the paper, but values can "
+        "differ slightly because the site fetches AlphaFold2 models rather than the "
+        "paper's AlphaFold3 structures.")
+    res = None
+    if os.path.exists(res_path):
+        res = pd.read_csv(res_path, sep="\t")
+        _asd_manhattan(res)
+    else:
+        st.info("Manhattan summary not found. Expected asd_data/asd_paper_manhattan.tsv. "
+                "You can still open individual proteins below.")
+    st.markdown("---")
+    st.subheader("Individual protein")
+    genes = sorted(variants["gene_name"].dropna().unique().tolist())
+    default_ix = 0
+    if res is not None and len(res):
+        tg = res.sort_values("min_p").iloc[0]["gene_name"]
+        if tg in genes:
+            default_ix = genes.index(tg)
+    gene = st.selectbox(f"Gene ({len(genes)} tested)", genes, index=default_ix)
+    if not st.button(f"Run 3DNT for {gene}", type="primary"):
+        return
+    sub = variants[variants["gene_name"] == gene]
+    acc = str(sub["uniprot_id"].iloc[0])
+    counts = sub.groupby("aa_pos")[["ac_case", "ac_control"]].sum().reset_index()
+    counts["uniprot_id"] = acc
+    try:
+        matches = F.resolve_uniprot(acc)
+        seq = matches[0]["sequence"] if matches else ""
+    except Exception:
+        seq = ""
+    try:
+        pdb_gz, pae = F.fetch_alphafold(acc, seq_len=len(seq) or None)
+    except Exception as e:
+        st.error(f"AlphaFold fetch failed for {acc}: {e}"); return
+    spin = (f"Running Fisher 3DNT for {gene} + {n_sims:,} permutations…"
+            if n_sims > 0 else f"Running Fisher 3DNT for {gene}…")
+    # pLDDT filter off here to match the paper's ASD analysis (it keeps disordered
+    # residues; filtering them strips control alleles from the background)
+    with st.spinner(spin):
+        try:
+            scores, meta = FS.run_fisher_3dnt(
+                counts, pdb_gz, pae, radius=radius, pae_cutoff=pae_cutoff,
+                plddt_cutoff=0.0, n_sims=int(n_sims))
+        except Exception as e:
+            st.error(f"Scan failed: {e}"); return
+    case_v = [{"pos": int(p)} for p in counts.loc[counts.ac_case > 0, "aa_pos"]]
+    ctrl_v = [{"pos": int(p)} for p in counts.loc[counts.ac_control > 0, "aa_pos"]]
+    render_result(scores, meta, pdb_gz, case_v, ctrl_v, gene, acc,
+                  len(seq) or int(counts["aa_pos"].max()), radius, pae_cutoff)
+
+
+page = st.sidebar.radio("Page", ["3DNT", "ASD (genome-wide)", "Citations"],
+                        label_visibility="collapsed")
+
+if page == "Citations":
+    st.title("Citations")
+    st.markdown("If you use this tool in your work, please cite:")
+
+    st.markdown(
+        "**Genetic and structural evidence links Ca²⁺ dysregulation and ATP2B2 to "
+        "neuropsychiatric illness**  \n"
+        "Sherif Gerges, Nikolaj Catois Straarup, Mohamed A. El-Brolosy, F. Kyle "
+        "Satterstrom, Nolan Kamitaki, Jiayi Yuan, Emi Ling, Carmen Gelze, Raozhou "
+        "Lin, Melissa Goldman, Curtis Mello, Tarjinder Singh, The Autism Sequencing "
+        "Consortium, Jonathan S. Weissman, Sabina Berretta, Jen Q. Pan, Hilary "
+        "Finucane, Charlott Stock, Poul Nissen, Steven A. McCarroll, Mark Daly.  \n"
+        "*bioRxiv* 2025.08.25.672202; doi: "
+        "[https://doi.org/10.1101/2025.08.25.672202]"
+        "(https://doi.org/10.1101/2025.08.25.672202)"
+    )
+
+    st.markdown("---")
+
+    st.markdown(
+        "**Systematic identification of disease-associated 3D neighborhoods in "
+        "protein structures**  \n"
+        "Emily Nason, Sherif Gerges, F. Kyle Satterstrom, Bram L. Gorissen, Ruqi "
+        "Liao, Georgia Panagiotaropoulou, Jeremy Guez, The Autism Sequencing "
+        "Consortium, Konrad J. Karczewski, Mark Daly, Hilary Finucane.  \n"
+        "*medRxiv* 2026.05.29.26354366; doi: "
+        "[https://doi.org/10.64898/2026.05.29.26354366]"
+        "(https://doi.org/10.64898/2026.05.29.26354366)"
+    )
+    st.stop()
+
+if page == "3DNT":
+    st.title("3D Neighborhood Test")
+
+with st.sidebar:
+    st.header("Parameters")
+    radius = st.slider("Neighborhood radius (Å)", 6.0, 30.0, 15.0, 1.0)
+    pae_cutoff = st.number_input("PAE cutoff (0 = off)", 0.0, 35.0, 15.0, 1.0)
+    st.markdown(
+        "<a href='https://www.ebi.ac.uk/training/online/courses/alphafold/"
+        "inputs-and-outputs/evaluating-alphafolds-predicted-structures-using-"
+        "confidence-scores/pae-a-measure-of-global-confidence-in-alphafold-"
+        "predictions/' target='_blank' style='font-size:0.95rem'>What is PAE?</a>",
+        unsafe_allow_html=True,
+    )
+    plddt_cutoff = st.slider("pLDDT cutoff", 0.0, 90.0, 50.0, 5.0)
+    st.markdown(
+        "<a href='https://www.ebi.ac.uk/training/online/courses/alphafold/"
+        "inputs-and-outputs/evaluating-alphafolds-predicted-structures-using-"
+        "confidence-scores/plddt-understanding-local-confidence/' "
+        "target='_blank' style='font-size:0.95rem'>What is pLDDT?</a>",
+        unsafe_allow_html=True,
+    )
+    n_sims = st.select_slider(
+        "Null simulations (multiple-testing correction)",
+        options=[0, 100, 500, 1000, 5000, 10000], value=1000)
+    st.markdown("---")
+    if n_sims > 0:
+        st.caption("Per-neighborhood **one-sided Fisher's exact test** (case "
+                   "enrichment). Significance uses a **permutation FWER** "
+                   "(Westfall–Young min-P over the correlated neighborhoods): "
+                   "case/control labels are shuffled across alleles, and a "
+                   "center is called significant when its p beats the null of "
+                   "the best center in ≥95% of simulations. Residues are colored "
+                   "by −log10 of the smallest p among neighborhoods containing "
+                   "them. Within-protein, not genome-wide.")
+    else:
+        st.caption("Per-neighborhood **one-sided Fisher's exact test** (case "
+                   "enrichment). With simulations off, only the **Bonferroni** "
+                   "cutoff (0.05 / #tested) is shown — conservative here because "
+                   "the neighborhoods are correlated. Residues are colored by "
+                   "−log10 of the smallest p among neighborhoods containing them. "
+                   "Within-protein, not genome-wide.")
+
+if page == "ASD (genome-wide)":
+    render_asd_page(radius, pae_cutoff, plddt_cutoff, n_sims)
+    st.stop()
+
+query = st.text_input("Gene symbol or UniProt accession", placeholder="e.g. CDK13 or Q14004")
+c1, c2 = st.columns(2)
+case_file = c1.file_uploader("Case variants", type=["txt", "tsv", "csv"])
+ctrl_file = c2.file_uploader("Control variants", type=["txt", "tsv", "csv"])
+st.markdown(
+    "<div style='font-size:1.05rem; line-height:1.4; color:#555'>"
+    "<code>.txt</code>, <code>.tsv</code>, or <code>.csv</code>. One variant per line, "
+    "either notation (auto-detected): <code>A985V</code> or <code>p.Ala985Val</code>. "
+    "In a .tsv/.csv the variant can be in any column; an integer column is used as an "
+    "allele count (otherwise each line = one allele). Header rows are ignored.</div>",
+    unsafe_allow_html=True,
+)
+
+# --- bundled example dataset ------------------------------------------------
+EX_DIR = os.path.join(_HERE, "examples")
+EX_CASE = os.path.join(EX_DIR, "ATP2B2_cases.txt")
+EX_CTRL = os.path.join(EX_DIR, "ATP2B2_controls.txt")
+ex_available = os.path.exists(EX_CASE) and os.path.exists(EX_CTRL)
+
+ex_run = False
+if ex_available:
+    ex_run = st.button("Try ATP2B2 example",
+                       help="Load the bundled ATP2B2 (Q01814) case/control set and run")
+
+# resolve inputs: example data takes precedence when its button is clicked
+if ex_run:
+    query_val = "ATP2B2"
+    case_bytes = open(EX_CASE, "rb").read()
+    ctrl_bytes = open(EX_CTRL, "rb").read()
+else:
+    query_val = query
+    case_bytes = case_file.getvalue() if case_file else None
+    ctrl_bytes = ctrl_file.getvalue() if ctrl_file else None
+
+run_clicked = st.button("Run 3DNT", type="primary",
+                        disabled=not (query and case_file and ctrl_file))
+run = run_clicked or (ex_run and case_bytes is not None and ctrl_bytes is not None)
+
+if run:
+    # 1. resolve protein -------------------------------------------------------
+    try:
+        matches = F.resolve_uniprot(query_val)
+    except Exception as e:
+        st.error(f"UniProt lookup failed: {e}"); st.stop()
+    if not matches:
+        st.error("No human reviewed UniProt entry found for that query."); st.stop()
+    if len(matches) > 1:
+        label = st.selectbox("Multiple matches — pick one:",
+                             [f"{m['gene']} ({m['accession']}, {len(m['sequence'])} aa)" for m in matches])
+        chosen = matches[[f"{m['gene']} ({m['accession']}, {len(m['sequence'])} aa)" for m in matches].index(label)]
+    else:
+        chosen = matches[0]
+    acc, seq, gene = chosen["accession"], chosen["sequence"], chosen["gene"]
+    st.success(f"{gene}  ·  {acc}  ·  {len(seq)} aa")
+
+    # 2. parse variants --------------------------------------------------------
+    case_v, case_err, case_fmt = V.parse_variants(case_bytes.decode("utf-8", "ignore"))
+    ctrl_v, ctrl_err, ctrl_fmt = V.parse_variants(ctrl_bytes.decode("utf-8", "ignore"))
+
+    def fmt_msg(fmt):
+        if not fmt:
+            return "no variants"
+        return " + ".join(f"{n} {k}" for k, n in fmt.items())
+    st.info(f"Detected notation — cases: {fmt_msg(case_fmt)}; controls: {fmt_msg(ctrl_fmt)}. "
+            "Both `A985V` and `p.Ala985Val` are accepted.")
+
+    for name, err in (("case", case_err), ("control", ctrl_err)):
+        if err:
+            st.warning(f"{len(err)} unparseable {name} line(s) skipped, e.g. line {err[0][0]}: '{err[0][1]}'")
+    warns = V.validate_against_sequence(case_v, seq) + V.validate_against_sequence(ctrl_v, seq)
+    if warns:
+        with st.expander(f"⚠️ {len(warns)} ref-AA / position mismatches (click to review)"):
+            for w in warns[:200]:
+                st.text(w)
+    df_counts = V.build_counts(case_v, ctrl_v, acc)
+    n_case = sum(v.get("count", 1) for v in case_v)
+    n_ctrl = sum(v.get("count", 1) for v in ctrl_v)
+    st.write(f"{n_case} case alleles, {n_ctrl} control alleles "
+             f"across {len(df_counts)} residues.")
+
+    # 3. fetch structure -------------------------------------------------------
+    try:
+        pdb_gz, pae = F.fetch_alphafold(acc, seq_len=len(seq))
+    except Exception as e:
+        st.error(f"AlphaFold fetch failed: {e}"); st.stop()
+
+    # 4f. run the Fisher neighborhood test ---------------------------------
+    _spin = ("Running Fisher 3D neighborhood test + "
+             f"{n_sims:,} permutations…") if n_sims > 0 else \
+            "Running Fisher 3D neighborhood test…"
+    with st.spinner(_spin):
+        try:
+            scores, meta = FS.run_fisher_3dnt(
+                df_counts, pdb_gz, pae, radius=radius,
+                pae_cutoff=pae_cutoff, plddt_cutoff=plddt_cutoff,
+                n_sims=int(n_sims))
+        except Exception as e:
+            st.error(f"Fisher scan failed: {e}"); st.stop()
+
+    render_result(scores, meta, pdb_gz, case_v, ctrl_v, gene, acc,
+                  len(seq), radius, pae_cutoff)
