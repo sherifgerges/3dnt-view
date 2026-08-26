@@ -295,6 +295,11 @@ def _asd_manhattan(res):
     if lines:
         st.caption(" · ".join(f"{lab_}: −log10 p = {y:.2f}" for lab_, y, _ in lines)
                    + f" · {len(sig)} gene(s) labeled")
+    st.markdown(
+        "<div style='text-align:center; font-size:0.9rem; color:#555; margin-top:2px'>"
+        "Figure 2 from Nason <i>et al.</i>, medRxiv 2026.</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_asd_page(radius, pae_cutoff, plddt_cutoff, n_sims):
