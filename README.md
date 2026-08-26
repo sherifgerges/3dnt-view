@@ -48,6 +48,36 @@ Files:
 - `examples/` — bundled ATP2B2 (Q01814) case/control lists for the demo button
 
 
+## ASD genome-wide mode
+
+The **"ASD (genome-wide)"** page reproduces the paper's ASD analysis with this
+site's own Fisher engine. It has two parts:
+
+- a **Manhattan plot** over the 669 proteins the 3DNT paper tested — one point per
+  protein (its most significant neighborhood), with FDR 0.05 (dashed) and FWER
+  0.05 (dotted) threshold lines and labeled significant genes;
+- an **individual protein** selector — pick any of the 669 genes and its 3DNT
+  result (table + enrichment-colored structure) is computed live.
+
+Bundled data lives in `asd_data/`:
+- `ASD_variants.tsv` — per-residue case/control variants for the 669 proteins
+  (shipped with the app so the drill-down works anywhere).
+- `asd_web_results.tsv` — the Manhattan summary. **Generate it once** with:
+
+  ```bash
+  python asd_batch.py            # all 669 proteins, 1000 permutations
+  python asd_batch.py --sims 0   # FDR only, faster (skip permutation FWER)
+  python asd_batch.py --limit 20 # quick test on 20 proteins
+  ```
+
+  `asd_batch.py` fetches each protein's AlphaFold structure, so run it on a
+  machine with internet (structures are cached in `afdb_cache/`, so it's
+  resumable). It computes genome-wide, gene-level BH-FDR and a **pooled-permutation
+  FWER** (labels permuted within every protein each replicate; the global minimum
+  p across proteins is the null max-statistic). If `asd_web_results.tsv` is
+  missing, the page still works — it just shows the individual-protein tool and a
+  note to run the batch.
+
 ## Notes / limitations
 
 - **Significance is within-protein** (Bonferroni / p-value thresholds across this

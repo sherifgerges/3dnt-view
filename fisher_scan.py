@@ -108,6 +108,59 @@ def _residue_distance_matrix(atom_coords, atom_res, n):
 
 
 # ---------------------------------------------------------------------------
+# Per-protein neighborhood model (shared observed setup)
+# ---------------------------------------------------------------------------
+def build_neighborhood_model(df_counts, pdb_gz_path, pae_path,
+                             radius=15.0, pae_cutoff=15.0,
+                             plddt_cutoff=PLDDT_CUTOFF_DEFAULT):
+    """Fixed neighborhood model for one protein.
+
+    Returns a dict with the center x variant-position membership matrix `M`,
+    per-position case/control counts, neighborhood totals, and the observed
+    one-sided Fisher p per center. The membership/totals are invariant under
+    label permutation, so the ASD batch reuses this for pooled permutations.
+    Mirrors run_fisher_3dnt's observed computation exactly.
+    """
+    resnums, plddt, atom_coords, atom_res = _parse_structure(pdb_gz_path)
+    n = len(resnums)
+    if n == 0:
+        raise ValueError("No protein residues parsed from the structure.")
+    d = _residue_distance_matrix(atom_coords, atom_res, n)
+    if pae_cutoff and pae_cutoff > 0:
+        pae = load_pae(pae_path)
+        if pae.shape == (n, n):
+            bad = (pae > pae_cutoff) & (pae.T > pae_cutoff)
+            d[bad] = 1000.0
+    resnum_to_idx = {int(r): i for i, r in enumerate(resnums)}
+    valid = {int(resnums[i]) for i in range(n) if plddt[i] > plddt_cutoff}
+    counts = {}
+    for row in df_counts.itertuples(index=False):
+        p = int(row.aa_pos)
+        if p in valid:
+            counts[p] = (int(row.ac_case), int(row.ac_control))
+    if not counts:
+        raise ValueError("No variant residues pass the pLDDT filter / map to structure.")
+    n_case = int(sum(c for c, _ in counts.values()))
+    n_ctrl = int(sum(k for _, k in counts.values()))
+    if n_case == 0 or n_ctrl == 0:
+        raise ValueError("Need at least one case and one control allele.")
+    positions = sorted(counts)
+    idx = np.array([resnum_to_idx[p] for p in positions], dtype=int)
+    var_case = np.array([counts[p][0] for p in positions], dtype=float)
+    var_ctrl = np.array([counts[p][1] for p in positions], dtype=float)
+    tot = var_case + var_ctrl
+    M = d[np.ix_(idx, idx)] <= radius
+    nbhd_total = M @ tot
+    N = n_case + n_ctrl
+    p_obs = np.where(nbhd_total > 0,
+                     hypergeom.sf((M @ var_case) - 1, N, n_case, nbhd_total),
+                     1.0).astype(float)
+    return {"positions": positions, "M": M, "var_case": var_case,
+            "var_ctrl": var_ctrl, "tot": tot, "nbhd_total": nbhd_total,
+            "n_case": n_case, "n_ctrl": n_ctrl, "N": N, "p_obs": p_obs}
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 def run_fisher_3dnt(df_counts, pdb_gz_path, pae_path,

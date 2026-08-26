@@ -249,18 +249,26 @@ def _asd_manhattan(res):
         lines.append(("FWER < 0.05", float(-np.log10(d.loc[d["fwer"] < 0.05, "min_p"].max())), [2, 3]))
 
     ymax = float(d["logp"].max())
-    pts = alt.Chart(d).mark_circle(size=45, opacity=0.85).encode(
+    pts = alt.Chart(d).mark_circle(size=50, opacity=0.85).encode(
         x=alt.X("x:Q", title=x_title, axis=alt.Axis(labels=False, ticks=False),
                 scale=alt.Scale(domain=[0, len(d) + 1])),
-        y=alt.Y("logp:Q", title="−log10(p)", scale=alt.Scale(domain=[-0.6, ymax * 1.06])),
-        color=alt.Color("cshade:N", scale=alt.Scale(range=["#2c7fb8", "#7fcdbb"]), legend=None),
+        y=alt.Y("logp:Q", title="−log₁₀(p)", scale=alt.Scale(domain=[-0.6, ymax * 1.08])),
+        color=alt.Color("cshade:N", scale=alt.Scale(domain=["0", "1"],
+                        range=["#2c7fb8", "#7fcdbb"]), legend=None),
         tooltip=["gene_name", "uniprot_id", "chrom", "top_aa_pos",
                  alt.Tooltip("min_p:Q", format=".2e"),
                  alt.Tooltip("logp:Q", title="-log10 p", format=".2f"), "n_tested"])
     layers = [pts]
-    for lab, y, dash in lines:
-        layers.append(alt.Chart(pd.DataFrame({"y": [y]})).mark_rule(
-            strokeDash=dash, color="grey").encode(y="y:Q"))
+    # threshold lines as a single layer -> gives a linetype legend on top,
+    # dashed = FDR, dotted = FWER, grey30 (like the ggplot)
+    if lines:
+        ldf = pd.DataFrame([{"level": lab, "y": y} for lab, y, _ in lines])
+        layers.append(alt.Chart(ldf).mark_rule(color="#4d4d4d").encode(
+            y="y:Q",
+            strokeDash=alt.StrokeDash("level:N",
+                scale=alt.Scale(domain=["FDR < 0.05", "FWER < 0.05"],
+                                range=[[6, 4], [2, 3]]),
+                legend=alt.Legend(orient="top", title=None, symbolType="stroke"))))
     # chromosome tick labels along the bottom
     if "chrom_num" in d:
         cm = (d.groupby("chrom_num").agg(x=("x", "mean"), chrom=("chrom", "first"))
@@ -269,14 +277,23 @@ def _asd_manhattan(res):
         cm["y"] = -0.5
         layers.append(alt.Chart(cm).mark_text(fontSize=9, color="#555").encode(
             x="x:Q", y="y:Q", text="lab"))
-    # label the FWER-significant genes
+    # label the FWER-significant genes (ggrepel-style: offset up, thin connector)
     sig = d[d["fwer"] < 0.05] if ("fwer" in d and d["fwer"].notna().any()) else d[d["fdr"] < 0.05]
     if len(sig):
-        layers.append(alt.Chart(sig).mark_text(dy=-8, fontSize=10, color="black").encode(
-            x="x:Q", y="logp:Q", text="gene_name"))
-    st.altair_chart(alt.layer(*layers).properties(height=440), use_container_width=True)
+        lab = sig.copy()
+        lab["ytext"] = lab["logp"] + 0.55
+        layers.append(alt.Chart(lab).mark_rule(color="#999", size=0.6).encode(
+            x="x:Q", y="logp:Q", y2="ytext:Q"))
+        layers.append(alt.Chart(lab).mark_text(fontSize=11, color="black", dy=-4).encode(
+            x="x:Q", y="ytext:Q", text="gene_name"))
+    chart = (alt.layer(*layers).properties(height=460)
+             .configure_axis(grid=False, domainColor="#333", labelColor="#333",
+                             titleColor="#333", titleFontSize=13)
+             .configure_view(strokeWidth=0)
+             .configure_legend(labelFontSize=12))
+    st.altair_chart(chart, use_container_width=True)
     if lines:
-        st.caption(" · ".join(f"{lab}: −log10 p = {y:.2f}" for lab, y, _ in lines)
+        st.caption(" · ".join(f"{lab_}: −log10 p = {y:.2f}" for lab_, y, _ in lines)
                    + f" · {len(sig)} gene(s) labeled")
 
 
