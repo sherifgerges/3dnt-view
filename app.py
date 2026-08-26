@@ -39,6 +39,15 @@ if os.path.exists(_BROAD):
     _lc2.image(_BROAD, use_container_width=True)
 
 # left-sidebar navigation
+def _results_heading(text):
+    """Slightly smaller than st.subheader, so the long results line isn't huge."""
+    st.markdown(
+        f"<div style='font-size:1.4rem; font-weight:600; color:#262730; "
+        f"margin:8px 0 6px 0; line-height:1.3'>{text}</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_result(scores, meta, pdb_gz, case_v, ctrl_v, gene, acc, seq_len, radius, pae_cutoff):
     """Render the per-protein 3DNT result (metrics, table, stats, structure)."""
     # 5f. results ----------------------------------------------------------
@@ -47,14 +56,16 @@ def render_result(scores, meta, pdb_gz, case_v, ctrl_v, gene, acc, seq_len, radi
     use_fwer = meta["n_sims"] > 0 and meta["n_sig_fwer"] is not None
     if use_fwer:
         n_sig = meta["n_sig_fwer"]
-        st.subheader(f"Results — {n_sig} significant neighborhood"
-                     f"{'' if n_sig == 1 else 's'} at FWER < 0.05 "
-                     f"(permutation, {meta['n_sims']:,} sims; {radius:g} Å radius)")
+        _results_heading(
+            f"Results — {n_sig} significant neighborhood"
+            f"{'' if n_sig == 1 else 's'} at FWER < 0.05 "
+            f"(permutation, {meta['n_sims']:,} sims; {radius:g} Å radius)")
     else:
         n_sig = meta["n_sig_bonferroni"]
-        st.subheader(f"Results — {n_sig} significant neighborhood"
-                     f"{'' if n_sig == 1 else 's'} at Bonferroni "
-                     f"(p < {bonf:.2e}; {radius:g} Å radius)")
+        _results_heading(
+            f"Results — {n_sig} significant neighborhood"
+            f"{'' if n_sig == 1 else 's'} at Bonferroni "
+            f"(p < {bonf:.2e}; {radius:g} Å radius)")
 
     m1, m2, m3, m4, m5 = st.columns(5)
     if use_fwer:
@@ -377,7 +388,7 @@ st.markdown(
 )
 _MODES = {
     "Explore a completed run (Autism)": "ASD (genome-wide)",
-    "Upload my own variants": "3DNT",
+    "Upload my own variants for my own gene + phenotype": "3DNT",
     "Citations": "Citations",
 }
 _choice = st.radio("mode", list(_MODES), horizontal=True, label_visibility="collapsed")
