@@ -335,7 +335,9 @@ def render_asd_page(radius, pae_cutoff, plddt_cutoff, n_sims):
         tg = res.sort_values("min_p").iloc[0]["gene_name"]
         if tg in genes:
             default_ix = genes.index(tg)
-    gene = st.selectbox(f"Gene ({len(genes)} tested)", genes, index=default_ix)
+    gene = st.selectbox(
+        f"Select a gene to recompute live ({len(genes)} proteins in the ASD analysis)",
+        genes, index=default_ix)
     if not st.button(f"Run 3DNT for {gene}", type="primary"):
         return
     sub = variants[variants["gene_name"] == gene]
@@ -368,8 +370,20 @@ def render_asd_page(radius, pae_cutoff, plddt_cutoff, n_sims):
                   len(seq) or int(counts["aa_pos"].max()), radius, pae_cutoff)
 
 
-page = st.sidebar.radio("Page", ["3DNT", "ASD (genome-wide)", "Citations"],
-                        label_visibility="collapsed")
+st.markdown(
+    "<div style='font-size:1.15rem; font-weight:600; color:#333; margin-bottom:4px'>"
+    "What would you like to do?</div>",
+    unsafe_allow_html=True,
+)
+_MODES = {
+    "Explore a completed run (Autism)": "ASD (genome-wide)",
+    "Upload my own variants": "3DNT",
+    "Citations": "Citations",
+}
+_choice = st.radio("mode", list(_MODES), horizontal=True, label_visibility="collapsed")
+page = _MODES[_choice]
+st.markdown("<hr style='margin:6px 0 14px 0; border:none; border-top:1px solid #eee'>",
+            unsafe_allow_html=True)
 
 if page == "Citations":
     st.title("Citations")
