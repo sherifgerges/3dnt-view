@@ -221,34 +221,63 @@ def render_result(scores, meta, pdb_gz, case_v, ctrl_v, gene, acc, seq_len, radi
 def _asd_manhattan(res):
     import altair as alt
     d = res.copy()
-    d = d[d["min_p"].notna()].sort_values("gene_name").reset_index(drop=True)
+    d = d[d["min_p"].notna()].copy()
     if d.empty:
         st.info("No proteins in the summary."); return
-    d["idx"] = range(1, len(d) + 1)
-    d["shade"] = (d["idx"] % 2).astype(str)
     d["logp"] = d["neglog10_min_p"]
+    # x order: genomic (chromosome, position) if available, else gene name
+    if "order_idx" in d and "chrom_num" in d:
+        d = d.sort_values("order_idx").reset_index(drop=True)
+        d["x"] = d["order_idx"]
+        d["cshade"] = (d["chrom_num"] % 2).astype(str)
+        x_title = "Chromosome"
+    else:
+        d = d.sort_values("gene_name").reset_index(drop=True)
+        d["x"] = range(1, len(d) + 1)
+        d["cshade"] = (d["x"] % 2).astype(str)
+        x_title = "Protein (ordered by gene name)"
+
+    # threshold lines: prefer exact precomputed values (from all neighborhoods)
     lines = []
-    if "fdr" in d and (d["fdr"] < 0.05).any():
+    if "fdr_line" in d and np.isfinite(d["fdr_line"].iloc[0]):
+        lines.append(("FDR < 0.05", float(d["fdr_line"].iloc[0]), [6, 4]))
+    elif "fdr" in d and (d["fdr"] < 0.05).any():
         lines.append(("FDR < 0.05", float(-np.log10(d.loc[d["fdr"] < 0.05, "min_p"].max())), [6, 4]))
-    if "fwer" in d and d["fwer"].notna().any() and (d["fwer"] < 0.05).any():
+    if "fwer_line" in d and np.isfinite(d["fwer_line"].iloc[0]):
+        lines.append(("FWER < 0.05", float(d["fwer_line"].iloc[0]), [2, 3]))
+    elif "fwer" in d and d["fwer"].notna().any() and (d["fwer"] < 0.05).any():
         lines.append(("FWER < 0.05", float(-np.log10(d.loc[d["fwer"] < 0.05, "min_p"].max())), [2, 3]))
-    base = alt.Chart(d)
-    pts = base.mark_circle(size=55, opacity=0.85).encode(
-        x=alt.X("idx:Q", title="Protein (ordered by gene name)", axis=alt.Axis(labels=False, ticks=False)),
-        y=alt.Y("logp:Q", title="−log10(p)"),
-        color=alt.Color("shade:N", scale=alt.Scale(range=["#2c7fb8", "#7fcdbb"]), legend=None),
-        tooltip=["gene_name", "uniprot_id", "top_aa_pos",
+
+    ymax = float(d["logp"].max())
+    pts = alt.Chart(d).mark_circle(size=45, opacity=0.85).encode(
+        x=alt.X("x:Q", title=x_title, axis=alt.Axis(labels=False, ticks=False),
+                scale=alt.Scale(domain=[0, len(d) + 1])),
+        y=alt.Y("logp:Q", title="−log10(p)", scale=alt.Scale(domain=[-0.6, ymax * 1.06])),
+        color=alt.Color("cshade:N", scale=alt.Scale(range=["#2c7fb8", "#7fcdbb"]), legend=None),
+        tooltip=["gene_name", "uniprot_id", "chrom", "top_aa_pos",
                  alt.Tooltip("min_p:Q", format=".2e"),
                  alt.Tooltip("logp:Q", title="-log10 p", format=".2f"), "n_tested"])
     layers = [pts]
     for lab, y, dash in lines:
-        layers.append(alt.Chart(pd.DataFrame({"y": [y]})).mark_rule(strokeDash=dash, color="grey").encode(y="y:Q"))
+        layers.append(alt.Chart(pd.DataFrame({"y": [y]})).mark_rule(
+            strokeDash=dash, color="grey").encode(y="y:Q"))
+    # chromosome tick labels along the bottom
+    if "chrom_num" in d:
+        cm = (d.groupby("chrom_num").agg(x=("x", "mean"), chrom=("chrom", "first"))
+              .reset_index())
+        cm["lab"] = cm["chrom"].str.replace("chr", "", regex=False)
+        cm["y"] = -0.5
+        layers.append(alt.Chart(cm).mark_text(fontSize=9, color="#555").encode(
+            x="x:Q", y="y:Q", text="lab"))
+    # label the FWER-significant genes
     sig = d[d["fwer"] < 0.05] if ("fwer" in d and d["fwer"].notna().any()) else d[d["fdr"] < 0.05]
     if len(sig):
-        layers.append(alt.Chart(sig).mark_text(dy=-8, fontSize=10, color="black").encode(x="idx:Q", y="logp:Q", text="gene_name"))
-    st.altair_chart(alt.layer(*layers).properties(height=430), use_container_width=True)
+        layers.append(alt.Chart(sig).mark_text(dy=-8, fontSize=10, color="black").encode(
+            x="x:Q", y="logp:Q", text="gene_name"))
+    st.altair_chart(alt.layer(*layers).properties(height=440), use_container_width=True)
     if lines:
-        st.caption(" · ".join(f"{lab}: −log10 p = {y:.2f}" for lab, y, _ in lines) + f" · {len(sig)} gene(s) labeled")
+        st.caption(" · ".join(f"{lab}: −log10 p = {y:.2f}" for lab, y, _ in lines)
+                   + f" · {len(sig)} gene(s) labeled")
 
 
 def render_asd_page(radius, pae_cutoff, plddt_cutoff, n_sims):
