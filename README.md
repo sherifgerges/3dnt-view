@@ -32,21 +32,6 @@ The method is three steps:
 3. **Score each residue** as −log10 of the smallest p-value across the
    neighborhoods that contain it.
 
-Neighborhoods use all-atom residue–residue distances, with a pair pushed apart
-(distance inflated) when both directions of the AlphaFold **PAE** exceed the
-cutoff — i.e. their relative position is poorly predicted. Residues with mean
-pLDDT below the cutoff are dropped.
-
-Output: a results table + downloadable TSV, and the structure colored white→red
-by enrichment. Multiple-testing significance uses a permutation FWER (see the UI).
-
-Files:
-- `app.py` — Streamlit UI and orchestration
-- `sir_fetch.py` — gene→UniProt resolution + AlphaFold download (cached)
-- `variants.py` — parse/validate variant files, build per-residue counts
-- `fisher_scan.py` — the self-contained Fisher 3D neighborhood test
-- `examples/` — bundled ATP2B2 (Q01814) case/control lists for the demo button
-
 
 ## ASD genome-wide mode
 
