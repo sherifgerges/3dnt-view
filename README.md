@@ -1,14 +1,6 @@
 # 3DNT web tool
 
-A small Streamlit app: enter a gene/protein, upload case + control variant lists
-(`E457K`- or `p.Glu457Lys`-style, one per line), and run a **3D neighborhood
-enrichment test** on the protein's AlphaFold structure. Residues are colored on
-the structure by how strongly the neighborhoods around them are enriched for
-case variants.
-
-The app is **self-contained** — pure Python, no external repo or reference data.
-It resolves the protein via UniProt and downloads the AlphaFold model + PAE at
-runtime (cached in `afdb_cache/`).
+A Streamlit app to run 3DNT in a browser.
 
 ## Run locally
 
